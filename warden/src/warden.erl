@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
-%%% @author Kevin
-%%% @copyright (C) 2016, <COMPANY>
+%%% @author Kevin Dawson
+%%% @copyright (C) 2016,
 %%% @doc
 %%%
 %%% @end
@@ -9,11 +9,14 @@
 -module(warden).
 -author("Kevin").
 
--export([start/1,add/2,stats/1,run/2, supervisor/1,rankScores/1]).
+-export([start/1,add/2,stats/1,run/2, supervisor/1,rankScores/1, retrieveSummaryScore/1]).
 -include_lib("eunit/include/eunit.hrl").
+% contains code that will override the meaning of ets:fun2ms().  Gotten from Learn You Some Erlang
+-include_lib("stdlib/include/ms_transform.hrl").
 
 
 start(State)->
+  ets:new(summary,[ordered_set, named_table,public ]),
   PID=spawn(?MODULE, supervisor, [State]), % warden, supervisor -> this is the function and then state
   PID.
 add(SupervisorPID,PID)-> % to supervisor add the processor ID of prisoner
@@ -22,6 +25,7 @@ add(SupervisorPID,PID)-> % to supervisor add the processor ID of prisoner
     {SupervisorPID,done,Total} -> % message has to be from supervisor
       Total
   end.
+%returns state which contains a tuple with two lists: Summary Score and Play History
 stats(SupervisorPID)->
   SupervisorPID!{self(),stats},
   receive
@@ -31,40 +35,42 @@ stats(SupervisorPID)->
 run(SupervisorPID,Iterations)-> % iterations, how many times should it run
   SupervisorPID!{self(),run,Iterations},
   receive
-    {SupervisorPID,done,Results} ->
-      Results
+    {SupervisorPID,done} ->
+      ok
   end.
 
 % This does the work
-supervisor({PrisonerList,Summary,History})->
+supervisor({PrisonerList,History})->
   receive
     {Sender,add,PID}-> % sender, atom and how to send to
       Sender!{self(),done,length(PrisonerList)+1}, % sends message back saying 'done' with the new length with the added prisoner
-      supervisor({[PID|PrisonerList],Summary,History}); % adds the Prisoner ID to the top of the list
+      supervisor({[PID|PrisonerList],History}); % adds the Prisoner ID to the top of the list
     {Sender,stats} ->
-      Sender!{self(),{Summary, History}}, % sends the state back to the warden
-      supervisor({PrisonerList,Summary,History});
+      %selects each {Key,Value} pair in ets table and returns them into a variable which is a list of tuples,
+      % use of '-include_lib("stdlib/include/ms_transform.hrl").'
+      Summary = ets:select(summary,ets:fun2ms(fun(X ={_Key,_Value}) -> X end)),
+      RankedSummary = rankScores(Summary), %sends list of tuples to function rankScores which returns an ordered list of tuples
+      Sender!{self(),{RankedSummary,History}}, % sends the state back to the warden
+      supervisor({PrisonerList,History});
     {Sender,run,Count} ->
-      {NewSummary,NewHistory}=iterate(PrisonerList,Summary,History,Count), % sends the prisoner list, the summary, history and the number of times to run
-      %%returns the score so far ordered from lowest to highest, sends the current Summary to function rankScores.  rankScores takes a map and returns an ordered list of tuples
-      Results = rankScores(NewSummary),
-      Sender!{self(),done, Results},
-      supervisor({PrisonerList,NewSummary,NewHistory})
+      {NewHistory}=iterate(PrisonerList,History,Count), % sends the prisoner list, the summary, history and the number of times to run
+      Sender!{self(),done},
+      supervisor({PrisonerList,NewHistory})
   end.
-iterate(_,Summary,History,0)->
-  {Summary,History};
+iterate(_,History,0)->
+  {History};
 % Called by the Supervisor
-iterate(Prisoners,Summary,History,N) ->
-  {NewSummary,NewHistory}=doOneRun(Prisoners,Summary,History), % sends prisoners list, summary and history
-  iterate(Prisoners,NewSummary,NewHistory,N-1).
-doOneRun([],Summary,History)->
-  {Summary,History};
-doOneRun([First|Rest],Summary,History) ->
-  {NewSummary,NewHistory}=doOnce(First,Rest,Summary,History), % sends the first element of the prisoner list, the rest of the list, summary and the history
-  doOneRun(Rest,NewSummary,NewHistory).
-doOnce(_,[],Summary,History)->
-  {Summary,History};
-doOnce(Agent,[OtherAgent|Rest],Summary,History) -> % agent is the fist element in the prisoner list, then the rest of the list, then the summary, and history
+iterate(Prisoners,History,N) ->
+  {NewHistory}=doOneRun(Prisoners,History), % sends prisoners list, summary and history
+  iterate(Prisoners,NewHistory,N-1).
+doOneRun([],History)->
+  {History};
+doOneRun([First|Rest],History) ->
+  {NewHistory}=doOnce(First,Rest,History), % sends the first element of the prisoner list, the rest of the list, summary and the history
+  doOneRun(Rest,NewHistory).
+doOnce(_,[],History)->
+  {History};
+doOnce(Agent,[OtherAgent|Rest],History) -> % agent is the fist element in the prisoner list, then the rest of the list and history
   Agent!{self(),name}, % asks the first prisoner for there name ------------------------------------------
   receive
     {Agent,name,MyName}-> % receives the first prisoners name
@@ -86,7 +92,6 @@ doOnce(Agent,[OtherAgent|Rest],Summary,History) -> % agent is the fist element i
       ok
   end,
   OtherAgent!{self(),result,MyChoice},
-%%  works when you take out list and replace with one variable
   receive
     {OtherAgent, result, OtherScore} ->
       ok
@@ -96,23 +101,28 @@ doOnce(Agent,[OtherAgent|Rest],Summary,History) -> % agent is the fist element i
     {Agent, result, MyScore} ->
       ok
   end,
-  maps:put(MyName, 0 , Summary), %%puts name of inmate as key and value 0 into Summary map
-  maps:put(OtherName, 0 , Summary), %%puts name of other inmate as key and value 0 into Summary map
-  CurrentScore1 = maps:get(MyName, Summary,0),  %gets score for inmate from Summary, returns 0 if a value can't be found for the key
-  CurrentScore2 = maps:get(OtherName, Summary,0),%gets score for other inmate from Summary, returns 0 if a value can't be found for the key
+  ets:insert_new(summary,[{MyName,0},{OtherName,0}]), %inserts into ets table first time round, returns false thereafter as elements exist
+  CurrentScore1 = retrieveSummaryScore(MyName), %gets overall score for inmate MyName by sending the variable as a key to function
+  CurrentScore2 = retrieveSummaryScore(OtherName),
   MyNewScore = CurrentScore1 + MyScore, % combines overall score with score of current round
   OthersNewScore = CurrentScore2 + OtherScore, % combines overall score with score of current round
-  NewestSummary = maps:put(MyName, MyNewScore, Summary), % puts new current score into a new map
-  FinalSummary = maps:put(OtherName, OthersNewScore, NewestSummary), % puts new score of other inmate and combines it with map holding first inmates score
-  OtherAgent!{self(), scores, OtherName},
-  doOnce(Agent,Rest,FinalSummary,[{MyName,MyChoice,OtherName,OtherChoice}|History]).
+  ets:update_element(summary,MyName,{2,MyNewScore}), %updates ets table with key 'MyName', assigns the 2nd positions value to MyNewScore
+  ets:update_element(summary,OtherName,{2,OthersNewScore}),
+  doOnce(Agent,Rest,[{MyName,MyChoice,OtherName,OtherChoice}|History]).%update history
 
 
 %%function to rank scores on sentence time, takes in a map and returns a sorted list
 rankScores(Scores) ->
-  ListSummary = maps:to_list(Scores),%% converts map to a list of tuples with key,value in each
   %% using lists sorting, the function swaps the order of the tuple contents as tuples automatically compare from first to last, then it sorts the list
   lists:sort(fun({KeyA,ValA}, {KeyB, ValB}) ->
                 {ValA,KeyA} =< {ValB,KeyB}
-             end, ListSummary).
+             end, Scores).
+
+%using the paramater Name as the key, returns current score
+retrieveSummaryScore(Name) ->
+  %gets score associated with the key 'Name' and puts a list containing a tuple with the Key and associated value ie score into variable
+  ScoreFromETS = ets:lookup(summary, Name),
+  %using proplist as its a list containing entries in form of tuple where first element is key
+  %returns the value associated with Name from the list, and returns 0 if no value exists
+  proplists:get_value(Name, ScoreFromETS,0).
 

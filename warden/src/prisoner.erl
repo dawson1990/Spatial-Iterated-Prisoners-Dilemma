@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
-%%% @author Kevin
-%%% @copyright (C) 2016, <COMPANY>
+%%% @author Kevin Dawson
+%%% @copyright (C) 2016,
 %%% @doc
 %%%
 %%% @end
@@ -18,6 +18,7 @@ create(Name, Strategy, State) ->
   PID = spawn(?MODULE, Strategy, [Name,State]),
   PID.
 
+%returns name of inmate
 getName(PrisonerPID) ->
   PrisonerPID!{self(), name},
   receive
@@ -25,7 +26,7 @@ getName(PrisonerPID) ->
       Name
   end.
 
-
+%returns the strategy name that the inmate chose
 getStrategy(PrisonerPID) ->
   PrisonerPID!{self(), strategy},
   receive
@@ -33,6 +34,7 @@ getStrategy(PrisonerPID) ->
       Strategy
   end.
 
+%returns State which is a list of tuples contains name of other prisoner, their choice and inmates choice
 getState(PrisonerPID) ->
   PrisonerPID!{self(), state},
   receive
@@ -50,6 +52,7 @@ titForTat(Name,State) ->
     {Sender, state} ->
       Sender!{self(),state, State};
     {Sender,choose, PartnerName}->
+      %filters the list to find if inmate has dealt with other inmate before
       HasDealtWith = lists:filter(
         fun(Turn) ->
           case Turn of
@@ -59,6 +62,7 @@ titForTat(Name,State) ->
               false
           end
         end,State),
+      %choice is chosen based on other inmates last choice
       MyChoice = case HasDealtWith of
                    [{_,"defected",_}|_] ->
                      "defected";
@@ -68,8 +72,11 @@ titForTat(Name,State) ->
       Sender!{self(),choice,MyChoice},
       receive
         {Sender, result, TheirChoice} ->
+          %sends a tuple with inmates choice and other inmates choice and returns the sentence they will serve
           MySentence = calculateSentence({MyChoice, TheirChoice}),
+          %sends their score to warden
           Sender!{self(), result, MySentence},
+          %updates state
           titForTat(Name, [{PartnerName,TheirChoice,MyChoice}|State])
       end
   end,
@@ -93,6 +100,7 @@ suspiciousTitForTat(Name,State) ->
               false
           end
         end,State),
+      %similar to titForTat only it starts with defected
       MyChoice = case HasDealtWith of
                      [{_,"cooperated",_}|_] ->
                        "cooperated";
@@ -127,7 +135,9 @@ titForTatRandom(Name, State) ->
               false
           end
         end,State),
-      PercentChance = rand:uniform(100), %% picks a random number between 1 and 100
+      %random number between 1 and 100 is put into 'PercentageChance'
+      PercentChance = rand:uniform(100),
+      %if PercentChance is less than 90% titForTat strategy is used
       if PercentChance < 90 ->
           MyChoice = case HasDealtWith of
             [{_,"defected",_}|_] ->
@@ -135,11 +145,14 @@ titForTatRandom(Name, State) ->
             _->
               "cooperated"
           end;
+        %else if its above 90% its random strategy
         true ->
+          %list containing two choices
           ChoicesList = ["cooperated","defected"],
-          Choice = rand:uniform(2),
-          MyChoice = lists:nth(Choice, ChoicesList)
+          Choice = rand:uniform(2), %randomly pick 1 or 2
+          MyChoice = lists:nth(Choice, ChoicesList) %inmates choice is the nth('Choice') element in 'ChoicesList
         end,
+      %sends choice to Warden
       Sender!{self(),choice,MyChoice},
       receive
         {Sender, result, TheirChoice} ->
@@ -159,6 +172,7 @@ alwaysDefect(Name,State) ->
     {Sender, state} ->
       Sender!{self(),state, State};
     {Sender,choose, PartnerName}->
+      %choice is always defected
       MyChoice = "defected",
       Sender!{self(),choice,MyChoice},
       receive
@@ -209,12 +223,16 @@ random(Name, State) ->
     {Sender, state} ->
       Sender!{self(),state, State};
     {Sender,choose, PartnerName}->
+      %list containing the two choice
       ChoicesList = ["cooperated","defected"],
+      %random number between 1 and 2
       Choice = rand:uniform(2),
+      %MyChoice is gotten from getting the value at position in 'Choice' from list 'ChoicesList'
       MyChoice = lists:nth(Choice, ChoicesList),
       Sender!{self(),choice,MyChoice},
       receive
         {Sender,result, TheirChoice}->
+          %sends a tuple with inmates choice and other inmates choice and returns the sentence they will serve
           MySentence = calculateSentence({MyChoice, TheirChoice}),
           Sender!{self(), result, MySentence},
           random(Name,[{PartnerName,TheirChoice,MyChoice}|State])
@@ -225,6 +243,7 @@ random(Name, State) ->
 
 %%function to calculate score, takes in a tuple containing first inmate and next inmates strategy choice and returns their sentence
 calculateSentence({MyChoice, TheirChoice}) ->
+  %takes the tuple from parameter and pattern matches them with cases
  case {MyChoice, TheirChoice}  of
    {MyChoice, TheirChoice} when MyChoice == "cooperated", TheirChoice == "cooperated"  ->
      1;
