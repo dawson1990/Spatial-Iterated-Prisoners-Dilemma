@@ -47,7 +47,7 @@ to achieve cooperation.
 To create warden:
 
 ```erlang
-W=warden:start({[],#{},[]}).
+W=warden:start({[],[]}).
 ```
 To create prisoners:
 ```erlang
