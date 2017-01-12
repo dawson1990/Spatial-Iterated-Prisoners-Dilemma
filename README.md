@@ -13,11 +13,10 @@ in prison on a lesser charge. Simultaneously, the prosecutors offer each prisone
 Each prisoner is given the opportunity either to: betray the other by testifying that the other
 committed the crime, or to cooperate with the other by remaining silent. The offer is:
 
-⋅⋅* If A and B each betray the other, each of them serves 2 years in prison
-⋅⋅* If A betrays B but B remains silent, A will be set free and B will serve 3 years in prison
-(and vice versa)
-⋅⋅* If A and B both remain silent, both of them will only serve 1 year in prison (on the
-lesser charge)
+* If A and B each betray the other, each of them serves 2 years in prison
+* If A betrays B but B remains silent, A will be set free and B will serve 3 years in prison (and vice versa)
+* If A and B both remain silent, both of them will only serve 1 year in prison (on the lesser charge)
+
 It is implied that the prisoners will have no opportunity to reward or punish their partner other than
 the prison sentences they get, and that their decision will not affect their reputation in the future.
 Because betraying a partner offers a greater reward than cooperating with him, all purely rational
