@@ -2,17 +2,19 @@
 %%% @author Kevin Dawson
 %%% @copyright (C) 2016,
 %%% @doc
-%%%
+%%%     standard version
 %%% @end
 %%% Created : 10. Nov 2016 16:41
 %%%-------------------------------------------------------------------
 -module(prisoner).
 -author("Kevin").
-
 %% API
--export([create/3, getName/1, getStrategy/1, getState/1,alwaysCoop/2,alwaysDefect/2,titForTat/2,suspiciousTitForTat/2,random/2,titForTatRandom/2, calculateSentence/1]).
+-export([create/3, getName/1, getStrategy/1, getState/1, titForTat/2,suspiciousTitForTat/2,titForTatRandom/2,random/2,alwaysCoop/2,alwaysDefect/2]).
 -include_lib("eunit/include/eunit.hrl").
-
+%%to test private functions
+-ifdef(TEST).
+-export([calculateSentence/1,getChoice/2]).
+-endif.
 
 create(Name, Strategy, State) ->
   PID = spawn(?MODULE, Strategy, [Name,State]),
@@ -87,7 +89,7 @@ suspiciousTitForTat(Name,State) ->
     {Sender, name} ->
       Sender!{self(),name, Name};
     {Sender, strategy} ->
-      Sender!{self(),strategy,titForTat};
+      Sender!{self(),strategy,suspiciousTitForTat};
     {Sender, state} ->
       Sender!{self(),state, State};
     {Sender,choose, PartnerName}->
@@ -102,6 +104,8 @@ suspiciousTitForTat(Name,State) ->
         end,State),
       %similar to titForTat only it starts with defected
       MyChoice = case HasDealtWith of
+                     false ->
+                       "defected";
                      [{_,"cooperated",_}|_] ->
                        "cooperated";
                      _->
@@ -112,17 +116,17 @@ suspiciousTitForTat(Name,State) ->
         {Sender, result, TheirChoice} ->
           MySentence = calculateSentence({MyChoice, TheirChoice}),
           Sender!{self(), result, MySentence},
-          titForTat(Name,[{PartnerName,TheirChoice,MyChoice}|State])
+          suspiciousTitForTat(Name,[{PartnerName,TheirChoice,MyChoice}|State])
       end
   end,
-  titForTat(Name,State).
+  suspiciousTitForTat(Name,State).
 
 titForTatRandom(Name, State) ->
   receive
     {Sender, name} ->
       Sender!{self(),name, Name};
     {Sender, strategy} ->
-      Sender!{self(),strategy,titForTat};
+      Sender!{self(),strategy,titForTatRandom};
     {Sender, state} ->
       Sender!{self(),state, State};
     {Sender,choose, PartnerName}->
@@ -240,6 +244,14 @@ random(Name, State) ->
   end,
   random(Name,State).
 
+%% for testing purposes
+getChoice(PrisonerPID, OtherPrisoner) ->
+  PrisonerPID!{self(), choose, OtherPrisoner},
+  receive
+    {PrisonerPID,choice,State} ->
+      State
+  end.
+
 
 %%function to calculate score, takes in a tuple containing first inmate and next inmates strategy choice and returns their sentence
 calculateSentence({MyChoice, TheirChoice}) ->
@@ -254,8 +266,6 @@ calculateSentence({MyChoice, TheirChoice}) ->
    {MyChoice, TheirChoice} when MyChoice == "defected", TheirChoice == "cooperated"  ->
      0
  end.
-
-
 
 
 
