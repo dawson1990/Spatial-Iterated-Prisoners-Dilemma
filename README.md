@@ -77,3 +77,17 @@ prisoner:getName(A).
 prisoner:getStartegy(A).
 prisoner:getState(A).
 ```
+
+To run tests on warden:
+```erlang 
+warden:test().
+```
+For speed test it had to be put into a private function as EUnit crashed when iterations above 800 were entered.  To run a speed test:
+```erlang 
+warden:timerun(N) %% where N = number of iterations
+```
+
+To run tests on prisoner:
+``` erlang
+prisoner:test().
+```
