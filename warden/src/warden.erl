@@ -50,7 +50,7 @@ supervisor({PrisonerList,History})->
       Sender!{self(),done,length(PrisonerList)+1}, % sends message back saying 'done' with the new length with the added prisoner
       supervisor({[PID|PrisonerList],History}); % adds the Prisoner ID to the top of the list
     {Sender,stats} ->
-      %selects each {Key,Value} pair in ets table and returns them into a variable which is a list of tuples,
+      %selects each {Key,PID,Value} pair in ets table and returns them into a variable which is a list of tuples,
       % use of '-include_lib("stdlib/include/ms_transform.hrl").'
       Summary = ets:select(summary,ets:fun2ms(fun(X ={_Key,_PID,_Value}) -> X end)),
       RankedSummary = rankScores(Summary), %sends list of tuples to function rankScores which returns an ordered list of tuples
@@ -105,13 +105,12 @@ doOnce(Agent,[OtherAgent|Rest],History) -> % agent is the fist element in the pr
     {Agent, result, _MyScore} ->
       ok
   end,
+  ets:insert_new(summary,[{_MyName,Agent,0},{_OtherName,OtherAgent,0}]), %inserts into ets table first time round prisoner name, pid and score of 0, returns false thereafter as elements exist
   CurrentScore1 = retrieveSummaryScore(_MyName), %gets overall score for inmate MyName by sending the variable as a key to function
   CurrentScore2 = retrieveSummaryScore(_OtherName),
-  ets:insert(summary,[{_MyName,Agent,CurrentScore1}]), %inserts into ets table first time round, returns false thereafter as elements exist
-  ets:insert(summary,[{_OtherName,OtherAgent, CurrentScore2}]), %inserts into ets table first time round, returns false thereafter as elements exist
   MyNewScore = CurrentScore1 + _MyScore, % combines overall score with score of current round
   OthersNewScore = CurrentScore2 + _OtherScore, % combines overall score with score of current round
-  ets:update_element(summary,_MyName,{3,MyNewScore}), %updates ets table with key 'MyName', assigns the 2nd positions value to MyNewScore
+  ets:update_element(summary,_MyName,{3,MyNewScore}), %updates ets table with key 'MyName', assigns the 3rd positions value to MyNewScore
   ets:update_element(summary,_OtherName,{3,OthersNewScore}),
   doOnce(Agent,Rest,[{_MyName,_MyChoice,_OtherName,_OtherChoice}|History]).%update history
 
@@ -119,19 +118,24 @@ doOnce(Agent,[OtherAgent|Rest],History) -> % agent is the fist element in the pr
 %%function to rank scores on sentence time, takes in a list of tuples and returns a sorted list of tuples based on score
 rankScores(Scores) ->
   %% using lists sorting, the function swaps the order of the tuple contents as tuples automatically compare from first to last, then it sorts the list
-  lists:sort(fun({KeyA,PIDA,ValA}, {KeyB,PIDB,ValB}) ->
-                {ValA,PIDA,KeyA} =< {ValB,PIDB,KeyB}
+  lists:sort(fun({KeyA,_PIDA,ValA}, {KeyB,_PIDB,ValB}) ->
+                {ValA,_PIDA,KeyA} =< {ValB,_PIDB,KeyB}
              end, Scores).
 
 %using the paramater Name as the key, returns current score
 retrieveSummaryScore(Name) ->
   %gets score associated with the key 'Name' and puts a list containing a tuple with the Key and associated value ie score into variable
   ScoreFromETS = ets:lookup(summary, Name),
-  %using proplist as its a list containing entries in form of tuple where first element is key
-  %returns the value associated with Name from the list, and returns 0 if no value exists
-  proplists:get_value(Name, ScoreFromETS,0).
-
-
+%%  pattern match the list with tuple inside to get the last element in the tuple
+  RetrievedScore = case ScoreFromETS of
+                    %% matches last element in tuple from ScoreFromETS
+                    [{_,_,X}]->
+                      X;
+                     %% if the tuple is empty returns a score of 0
+                     [] ->
+                       0
+                    end,
+  RetrievedScore.
 
 %%tests
 
